@@ -13,17 +13,18 @@ namespace KERT
     {
         private const string ModuleName = "ModuleMaintenanceResourceTransfer";
         private const float MaxTransferDistance = 2.5f;
-        private const int WaitInterval = 5;
+        private const int WaitInterval = 30;
+        private const int WaitStepSelectedPart = WaitInterval/5;
         private const string MaintenanceGuiTitle = "Maintenance Resource Transfer";
-        private const float MinGUIWidth = 350;
+        private const float MinGuiWidth = 350;
         internal Part SelectedPart;
         private bool _inputLockSet;
-        private double _lastDistanceDisplayedTime;
+        //private double _lastDistanceDisplayedTime;
         private bool _showGui;
         private float _transferRate;
         private List<Transfer> _transfers;
         private int _waitCounter;
-        private Rect _windowPos = new Rect(700, 500, MinGUIWidth, 40);
+        private Rect _windowPos = new Rect(700, 500, MinGuiWidth, 40);
         private double LastDistance { get; set; }
 
         public void Awake()
@@ -34,7 +35,7 @@ namespace KERT
             this._transfers = new List<Transfer>();
             this._transferRate = 1f;
             this._waitCounter = WaitInterval;
-            this._lastDistanceDisplayedTime = 0d;
+            //this._lastDistanceDisplayedTime = 0d;
         }
 
         private static double DistanceBetweenLocalPartAndTargetPart(Part targetPart, Part localPart)
@@ -44,14 +45,21 @@ namespace KERT
 
         public void FixedUpdate()
         {
-            if (this._waitCounter > 0 && this._transfers.Count == 0)
+            if (this._waitCounter > 0 && this._transfers.Count == 0 && !_showGui)
             {
-                this._waitCounter--;
+                if (this.SelectedPart != null)
+                {
+                    this._waitCounter -= WaitStepSelectedPart;
+                }
+                else
+                {
+                    this._waitCounter--;
+                }
                 return;
             }
             this._waitCounter = WaitInterval;
             var activeVessel = FlightGlobals.ActiveVessel;
-            var info = this._checkVessel(activeVessel);
+            var info = _checkVessel(activeVessel);
             if (!info.Item1)
             {
                 if (this.SelectedPart != null)
@@ -64,10 +72,10 @@ namespace KERT
             if (this.SelectedPart != null)
             {
                 var maxDist = info.Item2 == OperationMode.Maintenance ? info.Item3.MaxDistance : MaxTransferDistance;
-                if (!activeVessel.isEVA && info.Item3.MaintenanceTransferActive && this.LastDistance < maxDist)
-                {
-                    this.ShowGui();
-                }
+                //if (!activeVessel.isEVA && info.Item3.MaintenanceTransferActive && this.LastDistance < maxDist)
+                //{
+                //    this.ShowGui();
+                //}
                 if (!this._showGui && this._transfers.Count > 0)
                 {
                     this._transfers.Clear();
@@ -92,15 +100,15 @@ namespace KERT
                         this._showGui = false;
                         _showTransferAbort();
                     }
-                    if (info.Item2 == OperationMode.Maintenance)
-                    {
-                        var now = Planetarium.GetUniversalTime();
-                        if (now - this._lastDistanceDisplayedTime > 0.1f)
-                        {
-                            this._lastDistanceDisplayedTime = now;
-                            OSD.PostMessageLowerRightCorner(string.Format("[KERT] Distance: {0:F2}", this.LastDistance), 0.1f);
-                        }
-                    }
+                    //if (info.Item2 == OperationMode.Maintenance)
+                    //{
+                    //    var now = Planetarium.GetUniversalTime();
+                    //    if (now - this._lastDistanceDisplayedTime > 0.1f)
+                    //    {
+                    //        this._lastDistanceDisplayedTime = now;
+                    //        OSD.PostMessageLowerRightCorner(string.Format("[KERT] Distance: {0:F2}", this.LastDistance), 0.1f);
+                    //    }
+                    //}
                 }
                 this._setPartHighlighting(true);
                 var commonResources = GetCommonResources(activeVessel, this.SelectedPart, info.Item2, info.Item3);
@@ -272,30 +280,35 @@ namespace KERT
             }
         }
 
-        internal void HandleActionMenuOpened(Part data)
+        internal void ActionMenuOpened(Part part, bool userAction = false)
         {
             var activeVessel = FlightGlobals.ActiveVessel;
-            if (data.vessel.isEVA || data.vessel == activeVessel)
+            if (part.vessel.isEVA || part.vessel == activeVessel)
             {
                 return;
             }
-            var vesselInfo = this._checkVessel(activeVessel);
+            var vesselInfo = _checkVessel(activeVessel, userAction);
             if (!vesselInfo.Item1)
             {
                 return;
             }
             var module = vesselInfo.Item3;
             var opMode = vesselInfo.Item2;
-            var commRes = GetCommonResources(activeVessel, data, opMode, module);
+            var commRes = GetCommonResources(activeVessel, part, opMode, module);
             if (commRes.Count > 0)
             {
                 if (this.SelectedPart != null)
                 {
                     this._cleanSelectedPart();
                 }
-                this.SelectedPart = data;
+                this.SelectedPart = part;
                 this._addModuleToPart();
             }
+        }
+
+        private void HandleActionMenuOpened(Part data)
+        {
+            this.ActionMenuOpened(data);
         }
 
         private void HandleVesselChange(Vessel data)
@@ -343,8 +356,7 @@ namespace KERT
         }
 
         public void OnGUI()
-        {
-            const ControlTypes locks = ControlTypes.CAMERACONTROLS | ControlTypes.MAP | ControlTypes.ACTIONS_ALL;
+        {           
             const string inputLock = "KERT_Lock";
             if (!this._showGui && this._inputLockSet)
             {
@@ -358,7 +370,7 @@ namespace KERT
             this._windowPos = GUILayout.Window(this.GetType().FullName.GetHashCode(), this._windowPos, this.WindowGui, MaintenanceGuiTitle, GUILayout.Width(200), GUILayout.Height(20));
             if (this._windowPos.IsMouseOverRect())
             {
-                InputLockManager.SetControlLock(locks, inputLock);
+                InputLockManager.SetControlLock(GlobalConst.GUIWindowLockMask, inputLock);
                 this._inputLockSet = true;
             }
             else if (this._inputLockSet)
@@ -378,7 +390,7 @@ namespace KERT
             const int spacing = 3;
             const int bigSpacing = 7;
             var activeVessel = FlightGlobals.ActiveVessel;
-            var info = this._checkVessel(activeVessel);
+            var info = _checkVessel(activeVessel);
             if (!info.Item1)
             {
                 return;
@@ -391,7 +403,7 @@ namespace KERT
             var kerbalDistance = string.Format("Curr. Distance: {0:0.00}/{1:0.00}", this.LastDistance, maxDist);
             GUILayout.BeginVertical();
             GUILayout.Label("Active Part: " + this.SelectedPart.name, expandWidth);
-            GUILayout.Box("", new[] {GUILayout.MinWidth(MinGUIWidth), GUILayout.ExpandWidth(true), GUILayout.Height(0.5f)});
+            GUILayout.Box("", new[] {GUILayout.MinWidth(MinGuiWidth), GUILayout.ExpandWidth(true), GUILayout.Height(0.5f)});
             GUILayout.Space(spacing);
             GUILayout.Label("Resources:");
             GUILayout.Space(spacing);
@@ -500,27 +512,47 @@ namespace KERT
             }
         }
 
-        private Tuple<bool, OperationMode, ModuleMaintenanceTransferEnabler> _checkVessel(Vessel vessel)
+        private static Tuple<bool, OperationMode, ModuleMaintenanceTransferEnabler> _checkVessel(Vessel vessel, bool userAction = false)
         {
             if (vessel.isEVA)
             {
                 return new Tuple<bool, OperationMode, ModuleMaintenanceTransferEnabler>(true, OperationMode.Kerbal, null);
             }
             var module = _findModule(vessel);
-            if (module != null && _checkVesselForTransfer(module))
+            if (module != null && _checkVesselForTransfer(module, userAction))
             {
                 return new Tuple<bool, OperationMode, ModuleMaintenanceTransferEnabler>(true, OperationMode.Maintenance, module);
             }
             return new Tuple<bool, OperationMode, ModuleMaintenanceTransferEnabler>(false, OperationMode.Maintenance, null);
         }
 
-        private static bool _checkVesselForTransfer(ModuleMaintenanceTransferEnabler module)
+        private static bool _checkVesselForTransfer(ModuleMaintenanceTransferEnabler module, bool userAction)
         {
-            if (!module.ConnectedPartsOnly)
+            var ok = true;
+            var msg = string.Empty;
+            if (!module.MaintenanceTransferActive)
             {
-                return !module.TooManyParts && !module.TooHeavy;
+                msg = "No Maintenance-Transfer-Module active!";
+                ok = false;
             }
-            return true;
+            else if (!module.ConnectedPartsOnly)
+            {
+                if (module.TooManyParts)
+                {
+                    ok = false;
+                    msg = "Maintenance vessel has too many parts!";
+                }
+                else if (module.TooHeavy)
+                {
+                    ok = false;
+                    msg = "Maintenance vessel is too heavy!";
+                }
+            }
+            if (!ok && userAction)
+            {
+                OSD.PostMessageUpperCenter("[KERT] " + msg, 2f);
+            }
+            return ok;
         }
 
         private void _cleanSelectedPart()
@@ -625,7 +657,7 @@ namespace KERT
         private bool _distanceOk;
         internal KerbalTransferAddon Addon { get; set; }
 
-        [KSPEvent(name = OpenGUI, guiName = OpenTransferGui, guiActive = false, guiActiveUnfocused = true, active = true, unfocusedRange = 15f)]
+        [KSPEvent(name = OpenGUI, guiName = OpenTransferGui, guiActive = false, guiActiveUnfocused = true, externalToEVAOnly = false, active = true, unfocusedRange = 15f)]
         public void OpenGui()
         {
             if (this.Addon != null)
@@ -634,7 +666,7 @@ namespace KERT
                 {
                     if (!this.Addon.SelectedPart == this.part)
                     {
-                        this.Addon.HandleActionMenuOpened(this.part);
+                        this.Addon.ActionMenuOpened(this.part, true);
                     }
                     this.Addon.ShowGui();
                 }

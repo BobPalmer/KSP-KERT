@@ -16,12 +16,26 @@ namespace KERT
 
         internal bool TooHeavy
         {
-            get { return this.part.vessel.Parts.Sum(p => p.mass) > this.MaxMass; }
+            get
+            {
+                if (part.vessel == null || part.vessel.Parts == null)
+                {
+                    return true;
+                }
+                return this.part.vessel.Parts.Sum(p => p.mass) > this.MaxMass;
+            }
         }
 
         internal bool TooManyParts
         {
-            get { return this.part.vessel.Parts.Count > this.MaxParts; }
+            get
+            {
+                if (part.vessel == null || part.vessel.Parts == null)
+                {
+                    return true;
+                }
+                return this.part.vessel.Parts.Count > this.MaxParts;
+            }
         }
 
         [KSPEvent(name = EventName, guiName = "Toggle Maint. Transfer", guiActive = true, active = true, unfocusedRange = 15f)]
@@ -56,6 +70,10 @@ namespace KERT
                 return;
             }
             var ev = this.Events[EventName];
+            if (ev == null)
+            {
+                return;
+            }
             if (this.TooManyParts || this.TooHeavy)
             {
                 ev.active = ev.guiActive = false;
